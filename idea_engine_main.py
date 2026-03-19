@@ -1,8 +1,8 @@
 import re
 import sys
 
-from llm import LLMConfig
-from idea_engine_agents import concept_agent, tension_agent, chief_pick_agent, refiner_agent
+from llm import LLMConfig, call_llm
+from idea_engine_agents import tension_agent, refiner_agent
 
 
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
@@ -17,6 +17,54 @@ OLLAMA_URL = "http://localhost:11434"
 
 # ──────────────────────────────────────────────────────────────────────────────
 
+CONCEPT_SYSTEM = """You are a world-class strategist. Generate exactly 6 distinct, high-quality ideas for the given domain.
+
+Strict rules:
+- Each idea must represent a fundamentally different strategy
+- If two ideas are similar or variations of each other, merge them into one stronger idea
+- No filler ideas — every idea must earn its place
+- Be specific: who does it, what happens, why it works
+- Each idea must have a clear competitive advantage or measurable upside
+
+Format exactly as:
+
+IDEA 1: [title]
+[2-3 sentences]
+
+IDEA 2: [title]
+[2-3 sentences]
+
+IDEA 3: [title]
+[2-3 sentences]
+
+IDEA 4: [title]
+[2-3 sentences]
+
+IDEA 5: [title]
+[2-3 sentences]
+
+IDEA 6: [title]
+[2-3 sentences]"""
+
+CHIEF_SYSTEM = """You are a chief product officer. You select the strongest ideas based on real-world potential.
+
+Criteria:
+- speed to value
+- clarity of execution
+- resilience to criticism
+- differentiation
+
+Be aggressive. Eliminate weak ideas. Justify every selection.
+
+Respond ONLY in this format:
+
+SELECTED:
+- IDEA [number]: [one sentence justification]
+- IDEA [number]: [one sentence justification]
+(repeat for exactly {target_n} selections)"""
+
+
+# ─── HELPERS ──────────────────────────────────────────────────────────────────
 
 def log(step: str, content: str = ""):
     print(f"\n{'─' * 60}")
@@ -26,22 +74,79 @@ def log(step: str, content: str = ""):
         print(content)
 
 
+def format_ideas(ideas: list) -> str:
+    return "\n\n".join(f"IDEA {i+1}: {idea}" for i, idea in enumerate(ideas))
+
+
+def parse_ideas(text: str, count: int) -> list:
+    ideas = []
+    for i in range(1, count + 1):
+        next_marker = rf"IDEA {i+1}:" if i < count else "$"
+        pattern = rf"IDEA {i}:\s*(.*?)(?={next_marker})"
+        match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
+        ideas.append(match.group(1).strip() if match else f"[idea {i} not parsed]")
+    return ideas
+
+
 def extract_block(text: str, label: str, number: int) -> str:
-    """Extract a numbered block (e.g. IDEA 2 or CRITIQUE 3) from agent output."""
     pattern = rf"{label} {number}:.*?(?={label} {number + 1}:|$)"
     match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
-    return match.group(0).strip() if match else text
+    return match.group(0).strip() if match else ""
 
 
-def parse_pick(pick_text: str) -> int:
-    """Parse the idea number from the chief's pick response."""
-    match = re.search(r"PICK:\s*([123])", pick_text, re.IGNORECASE)
-    if match:
-        return int(match.group(1))
-    # fallback: find any standalone 1-3
-    match = re.search(r"\b([123])\b", pick_text)
-    return int(match.group(1)) if match else 1
+def parse_chief_selection(text: str, ideas: list, critiques_text: str, target_n: int) -> tuple:
+    """Return (selected_ideas, selected_indices) based on chief output."""
+    numbers = re.findall(r"IDEA\s+(\d+)", text, re.IGNORECASE)
+    seen = set()
+    indices = []
+    for n in numbers:
+        idx = int(n) - 1
+        if 0 <= idx < len(ideas) and idx not in seen:
+            seen.add(idx)
+            indices.append(idx)
 
+    # fallback: take first target_n
+    if len(indices) < target_n:
+        for i in range(len(ideas)):
+            if i not in seen:
+                indices.append(i)
+                seen.add(i)
+            if len(indices) >= target_n:
+                break
+
+    return [ideas[i] for i in indices[:target_n]], indices[:target_n]
+
+
+# ─── AGENTS ───────────────────────────────────────────────────────────────────
+
+def generate_ideas(domain: str, config: LLMConfig) -> list:
+    log("CONCEPT AGENT", f"Generating 6 distinct ideas for: {domain}...")
+    output = call_llm(config, CONCEPT_SYSTEM, f"Domain: {domain}")
+    log("CONCEPT AGENT → Output", output)
+    return parse_ideas(output, 6)
+
+
+def chief_select(ideas: list, critiques_text: str, target_n: int, config: LLMConfig, round_num: int) -> tuple:
+    system = CHIEF_SYSTEM.format(target_n=target_n)
+    prompt = f"IDEAS:\n{format_ideas(ideas)}\n\nCRITIQUES:\n{critiques_text}\n\nSelect the best {target_n} ideas."
+    log(f"CHIEF | Round {round_num}", f"Selecting top {target_n} from {len(ideas)} ideas...")
+    output = call_llm(config, system, prompt)
+    log(f"CHIEF → Selection", output)
+    return parse_chief_selection(output, ideas, critiques_text, target_n)
+
+
+def refine_ideas(ideas: list, critiques_text: str, config: LLMConfig, round_num: int) -> list:
+    refined = []
+    for i, idea in enumerate(ideas):
+        critique = extract_block(critiques_text, "CRITIQUE", i + 1) or critiques_text[:600]
+        log(f"REFINER | Round {round_num} | {i+1}/{len(ideas)}", "")
+        output = refiner_agent(idea, critique[:600], config)
+        log(f"REFINER → Idea {i+1}", output)
+        refined.append(output.strip())
+    return refined
+
+
+# ─── PIPELINE ─────────────────────────────────────────────────────────────────
 
 def run(domain: str):
     config = LLMConfig(
@@ -53,34 +158,40 @@ def run(domain: str):
 
     log("CHIEF", f"Domain: {domain}")
 
-    # Step 1: Generate 3 ideas
-    log("CONCEPT AGENT", f"Generating 3 ideas for: {domain}...")
-    ideas = concept_agent(domain, config)
-    log("CONCEPT AGENT → Output", ideas)
+    # ── STAGE 1: Generate 6 ideas ──────────────────────────────────────────────
+    ideas = generate_ideas(domain, config)
 
-    # Step 2: Critique all 3
-    log("TENSION AGENT", "Critiquing all 3 ideas...")
-    critiques = tension_agent(ideas, config)
-    log("TENSION AGENT → Output", critiques)
+    # ── STAGE 2: Tension Round 1 — critique all 6 ─────────────────────────────
+    log("TENSION AGENT | Round 1", "Critiquing all 6 ideas...")
+    critiques_1 = tension_agent(format_ideas(ideas), config)
+    log("TENSION AGENT → Round 1 Output", critiques_1)
 
-    # Step 3: Chief picks the best
-    log("CHIEF", "Selecting best idea...")
-    pick_response = chief_pick_agent(ideas, critiques, config)
-    log("CHIEF → Selection", pick_response)
-    pick_number = parse_pick(pick_response)
-    print(f"\n  → Chose Idea #{pick_number}")
+    # ── STAGE 3: Chief Round 1 — select top 3 ─────────────────────────────────
+    ideas_3, _ = chief_select(ideas, critiques_1, 3, config, round_num=1)
 
-    # Step 4: Extract chosen idea + its critique
-    chosen_idea = extract_block(ideas, "IDEA", pick_number)
-    chosen_critique = extract_block(critiques, "CRITIQUE", pick_number)[:800]
+    # ── STAGE 4: Refiner Round 1 — refine the 3 ───────────────────────────────
+    ideas_3 = refine_ideas(ideas_3, critiques_1, config, round_num=1)
 
-    # Step 5: Refine
-    log("REFINER AGENT", f"Refining Idea #{pick_number}...")
-    refined = refiner_agent(chosen_idea, chosen_critique, config)
-    log("REFINER AGENT → Output", refined)
+    # ── STAGE 5: Tension Round 2 — deeper critique of 3 ──────────────────────
+    log("TENSION AGENT | Round 2", "Deeper critique of 3 refined ideas...")
+    critiques_2 = tension_agent(format_ideas(ideas_3), config)
+    log("TENSION AGENT → Round 2 Output", critiques_2)
 
-    log("CHIEF → FINAL OUTPUT", refined)
-    return refined
+    # ── STAGE 6: Chief Round 2 — select top 2 ─────────────────────────────────
+    ideas_2, _ = chief_select(ideas_3, critiques_2, 2, config, round_num=2)
+
+    # ── STAGE 7: Refiner Round 2 — refine the final 2 ────────────────────────
+    ideas_2 = refine_ideas(ideas_2, critiques_2, config, round_num=2)
+
+    # ── STAGE 8: Final Output — show both ideas ────────────────────────────────
+    log("FINAL OUTPUT", "")
+    for i, idea in enumerate(ideas_2):
+        print(f"\n{'═' * 60}")
+        print(f"  FINALIST {i+1}")
+        print(f"{'═' * 60}")
+        print(idea)
+
+    return ideas_2
 
 
 if __name__ == "__main__":
