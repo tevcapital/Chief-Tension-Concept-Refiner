@@ -202,19 +202,22 @@ def run(domain: str):
     # ── STAGE 7: Refiner Round 2 — refine the final 2 ────────────────────────
     ideas_2 = refine_ideas(ideas_2, critiques_2, config, round_num=2)
 
-    # ── STAGE 8: Compress each finalist to a primary decision ─────────────────
-    log("COMPRESSION AGENT", "Compressing finalists to primary decisions...")
-    decisions = [compress_to_decision(idea, config) for idea in ideas_2]
+    # ── STAGE 8: Final selection — pick 1 from 2 ──────────────────────────────
+    log("CHIEF | Final", "Selecting 1 from 2 finalists...")
+    final_ideas, _ = chief_select(ideas_2, critiques_2, 1, config, round_num=3)
+    final_idea = final_ideas[0]
 
-    # ── STAGE 9: Final Output ──────────────────────────────────────────────────
-    log("FINAL OUTPUT", "")
-    for i, decision in enumerate(decisions):
-        print(f"\n{'═' * 60}")
-        print(f"  PRIMARY DECISION {i+1}")
-        print(f"{'═' * 60}")
-        print(decision)
+    # ── STAGE 9: Compress to primary decision ─────────────────────────────────
+    log("COMPRESSION AGENT", "Compressing to primary decision...")
+    decision = compress_to_decision(final_idea, config)
 
-    return decisions
+    # ── STAGE 10: Final Output ─────────────────────────────────────────────────
+    print(f"\n{'═' * 60}")
+    print(f"  PRIMARY DECISION")
+    print(f"{'═' * 60}")
+    print(decision)
+
+    return decision
 
 
 if __name__ == "__main__":
