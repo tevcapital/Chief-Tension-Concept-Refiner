@@ -105,6 +105,32 @@ Pick the idea that:
 
 Avoid picking the most complex or "impressive" idea by default.
 
+When producing the final selected idea, you MUST compress the output into a clear, concrete action.
+
+PRIMARY DECISION RULES:
+- Maximum 2 sentences
+- Must describe a real-world action (not a concept)
+- No branding names (no "Engine", "Protocol", "Framework", etc.)
+- No metaphors or analogies
+- No storytelling or philosophical language
+- No invented product or system names
+- No vague verbs like "leverage", "optimize", "reimagine", "enhance"
+
+Write the decision so that it clearly answers:
+What is being done, for whom, and how it creates value or makes money.
+
+GOOD EXAMPLES:
+- "Offer a subscription service to small businesses that automates invoice follow-ups via email and SMS, charging a monthly fee."
+- "Create a referral program for a local gym where members bring in new users in exchange for discounts, increasing signups."
+
+BAD EXAMPLES:
+- "Build a scalable growth engine for customer engagement"
+- "Develop an AI-powered optimization framework"
+- "Create a next-generation platform for value creation"
+
+If the output sounds impressive but unclear, it is wrong.
+If someone can read it and immediately know what to do, it is correct.
+
 Respond with:
 PICK: [number] | REASON: [one sentence]"""
 
