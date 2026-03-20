@@ -196,22 +196,20 @@ def run(domain: str):
     critiques_2 = tension_agent(format_ideas(ideas_3), config)
     log("TENSION AGENT → Round 2 Output", critiques_2)
 
-    # ── STAGE 6: Chief Round 2 — select top 2 ─────────────────────────────────
-    ideas_2, _ = chief_select(ideas_3, critiques_2, 2, config, round_num=2)
-
-    # ── STAGE 7: Refiner Round 2 — refine the final 2 ────────────────────────
-    ideas_2 = refine_ideas(ideas_2, critiques_2, config, round_num=2)
-
-    # ── STAGE 8: Final selection — pick 1 from 2 ──────────────────────────────
-    log("CHIEF | Final", "Selecting 1 from 2 finalists...")
-    final_ideas, _ = chief_select(ideas_2, critiques_2, 1, config, round_num=3)
+    # ── STAGE 6: Chief Round 2 — select top 1 directly from 3 ────────────────
+    log("CHIEF | Round 2", "Selecting 1 from 3 ideas...")
+    final_ideas, _ = chief_select(ideas_3, critiques_2, 1, config, round_num=2)
     final_idea = final_ideas[0]
 
-    # ── STAGE 9: Compress to primary decision ─────────────────────────────────
+    # ── STAGE 7: Refiner Round 2 — refine the winner ─────────────────────────
+    final_ideas = refine_ideas([final_idea], critiques_2, config, round_num=2)
+    final_idea = final_ideas[0]
+
+    # ── STAGE 8: Compress to primary decision ─────────────────────────────────
     log("COMPRESSION AGENT", "Compressing to primary decision...")
     decision = compress_to_decision(final_idea, config)
 
-    # ── STAGE 10: Final Output ─────────────────────────────────────────────────
+    # ── STAGE 9: Final Output ──────────────────────────────────────────────────
     print(f"\n{'═' * 60}")
     print(f"  PRIMARY DECISION")
     print(f"{'═' * 60}")
