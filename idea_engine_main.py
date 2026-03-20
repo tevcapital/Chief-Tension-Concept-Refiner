@@ -12,7 +12,7 @@ BACKEND = "ollama"          # "groq" or "ollama"
 GROQ_MODEL = "llama-3.3-70b-versatile"
 GROQ_API_KEY = "your-groq-api-key-here"
 
-OLLAMA_MODEL = "qwen3.5:4b"
+OLLAMA_MODEL = "gpt-oss:20b"
 OLLAMA_URL = "http://localhost:11434"
 
 # ──────────────────────────────────────────────────────────────────────────────
