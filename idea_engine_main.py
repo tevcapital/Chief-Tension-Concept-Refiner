@@ -2,6 +2,8 @@ import re
 import sys
 
 from llm import LLMConfig, call_llm
+from llm_local import call_ollama
+from llm_api import call_api
 from idea_engine_agents import tension_agent, refiner_agent
 
 
@@ -16,6 +18,23 @@ OLLAMA_MODEL = "gpt-oss:20b"
 OLLAMA_URL = "http://localhost:11434"
 
 # ──────────────────────────────────────────────────────────────────────────────
+
+AGENT_MODE = {
+    "concept": "local",
+    "tension": "local",
+    "chief": "api",
+    "refiner": "local",
+    "execution": "api",
+}
+
+
+def generate(prompt: str, agent: str) -> str:
+    mode = AGENT_MODE.get(agent, "local")
+    if mode == "api":
+        return call_api(prompt, model="gpt-4o")
+    else:
+        return call_ollama(prompt)
+
 
 CONCEPT_SYSTEM = """You are a world-class strategist. Generate exactly 6 distinct, high-quality ideas for the given domain.
 
@@ -121,23 +140,24 @@ def parse_chief_selection(text: str, ideas: list, critiques_text: str, target_n:
 
 def generate_ideas(domain: str, config: LLMConfig) -> list:
     log("CONCEPT AGENT", f"Generating 6 distinct ideas for: {domain}...")
-    output = call_llm(config, CONCEPT_SYSTEM, f"Domain: {domain}")
+    prompt = f"{CONCEPT_SYSTEM}\n\nDomain: {domain}"
+    output = generate(prompt, "concept")
     log("CONCEPT AGENT → Output", output)
     return parse_ideas(output, 6)
 
 
 def chief_select(ideas: list, critiques_text: str, target_n: int, config: LLMConfig, round_num: int) -> tuple:
     system = CHIEF_SYSTEM.format(target_n=target_n)
-    prompt = f"IDEAS:\n{format_ideas(ideas)}\n\nCRITIQUES:\n{critiques_text}\n\nSelect the best {target_n} ideas."
+    user = f"IDEAS:\n{format_ideas(ideas)}\n\nCRITIQUES:\n{critiques_text}\n\nSelect the best {target_n} ideas."
     log(f"CHIEF | Round {round_num}", f"Selecting top {target_n} from {len(ideas)} ideas...")
-    output = call_llm(config, system, prompt)
+    output = generate(f"{system}\n\n{user}", "chief")
     log(f"CHIEF → Selection", output)
     return parse_chief_selection(output, ideas, critiques_text, target_n)
 
 
 def compress_to_decision(text: str, config: LLMConfig) -> str:
     system = "You are a decision compressor. Convert verbose ideas into clear, concrete, executable actions."
-    prompt = f"""Rewrite the following idea into a clear, concrete, executable action.
+    user = f"""Rewrite the following idea into a clear, concrete, executable action.
 
 RULES:
 - Maximum 2 sentences
@@ -151,7 +171,7 @@ IDEA:
 {text}
 
 OUTPUT:"""
-    return call_llm(config, system, prompt).strip()
+    return generate(f"{system}\n\n{user}", "chief").strip()
 
 
 def refine_ideas(ideas: list, critiques_text: str, config: LLMConfig, round_num: int) -> list:
