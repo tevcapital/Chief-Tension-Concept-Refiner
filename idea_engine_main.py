@@ -135,6 +135,25 @@ def chief_select(ideas: list, critiques_text: str, target_n: int, config: LLMCon
     return parse_chief_selection(output, ideas, critiques_text, target_n)
 
 
+def compress_to_decision(text: str, config: LLMConfig) -> str:
+    system = "You are a decision compressor. Convert verbose ideas into clear, concrete, executable actions."
+    prompt = f"""Rewrite the following idea into a clear, concrete, executable action.
+
+RULES:
+- Maximum 2 sentences
+- Must describe a real-world action (not a concept)
+- No branding names (no "Engine", "Protocol", "Framework", etc.)
+- No metaphors or storytelling
+- No vague language (no "leverage", "optimize", "reimagine", "enhance")
+- Must clearly state what is being done, for whom, and how it creates value
+
+IDEA:
+{text}
+
+OUTPUT:"""
+    return call_llm(config, system, prompt).strip()
+
+
 def refine_ideas(ideas: list, critiques_text: str, config: LLMConfig, round_num: int) -> list:
     refined = []
     for i, idea in enumerate(ideas):
@@ -183,15 +202,19 @@ def run(domain: str):
     # ── STAGE 7: Refiner Round 2 — refine the final 2 ────────────────────────
     ideas_2 = refine_ideas(ideas_2, critiques_2, config, round_num=2)
 
-    # ── STAGE 8: Final Output — show both ideas ────────────────────────────────
-    log("FINAL OUTPUT", "")
-    for i, idea in enumerate(ideas_2):
-        print(f"\n{'═' * 60}")
-        print(f"  FINALIST {i+1}")
-        print(f"{'═' * 60}")
-        print(idea)
+    # ── STAGE 8: Compress each finalist to a primary decision ─────────────────
+    log("COMPRESSION AGENT", "Compressing finalists to primary decisions...")
+    decisions = [compress_to_decision(idea, config) for idea in ideas_2]
 
-    return ideas_2
+    # ── STAGE 9: Final Output ──────────────────────────────────────────────────
+    log("FINAL OUTPUT", "")
+    for i, decision in enumerate(decisions):
+        print(f"\n{'═' * 60}")
+        print(f"  PRIMARY DECISION {i+1}")
+        print(f"{'═' * 60}")
+        print(decision)
+
+    return decisions
 
 
 if __name__ == "__main__":
