@@ -129,8 +129,10 @@ def generate_ideas(domain: str, config: LLMConfig) -> list:
     return parse_ideas(output, 6)
 
 
-def chief_select(ideas: list, critiques_text: str, target_n: int, config: LLMConfig, round_num: int) -> tuple:
+def chief_select(ideas: list, critiques_text: str, target_n: int, config: LLMConfig, round_num: int, domain: str = "") -> tuple:
     system = CHIEF_SYSTEM.format(target_n=target_n)
+    if domain:
+        system += f"\n\nCONSTRAINTS REMINDER: The original domain is: {domain}. Any idea, critique, or refinement that contradicts these constraints is invalid and must be flagged: no building software products, no hiring staff, no cloud migrations, no technical infrastructure — only ideas executable by a solo non-technical consultant using existing tools."
     user = f"IDEAS:\n{format_ideas(ideas)}\n\nCRITIQUES:\n{critiques_text}\n\nSelect the best {target_n} ideas."
     log(f"CHIEF | Round {round_num}", f"Selecting top {target_n} from {len(ideas)} ideas...")
     output = call_ollama(f"{system}\n\n{user}", model=OLLAMA_MODEL)
@@ -138,8 +140,10 @@ def chief_select(ideas: list, critiques_text: str, target_n: int, config: LLMCon
     return parse_chief_selection(output, ideas, critiques_text, target_n)
 
 
-def compress_to_decision(text: str, config: LLMConfig) -> str:
+def compress_to_decision(text: str, config: LLMConfig, domain: str = "") -> str:
     system = "You are a decision compressor. Convert verbose ideas into clear, concrete, executable actions."
+    if domain:
+        system += f"\n\nCONSTRAINTS REMINDER: The original domain is: {domain}. Any idea, critique, or refinement that contradicts these constraints is invalid and must be flagged: no building software products, no hiring staff, no cloud migrations, no technical infrastructure — only ideas executable by a solo non-technical consultant using existing tools."
     user = f"""Rewrite the following idea into a clear, concrete, executable action.
 
 RULES:
@@ -157,12 +161,12 @@ OUTPUT:"""
     return call_ollama(f"{system}\n\n{user}", model=OLLAMA_MODEL).strip()
 
 
-def refine_ideas(ideas: list, critiques_text: str, config: LLMConfig, round_num: int) -> list:
+def refine_ideas(ideas: list, critiques_text: str, config: LLMConfig, round_num: int, domain: str = "") -> list:
     refined = []
     for i, idea in enumerate(ideas):
         critique = extract_block(critiques_text, "CRITIQUE", i + 1) or critiques_text[:600]
         log(f"REFINER | Round {round_num} | {i+1}/{len(ideas)}", "")
-        output = refiner_agent(idea, critique[:600], config)
+        output = refiner_agent(idea, critique[:600], config, domain)
         log(f"REFINER → Idea {i+1}", output)
         refined.append(output.strip())
     return refined
@@ -185,32 +189,32 @@ def run(domain: str):
 
     # ── STAGE 2: Tension Round 1 — critique all 6 ─────────────────────────────
     log("TENSION AGENT | Round 1", "Critiquing all 6 ideas...")
-    critiques_1 = tension_agent(format_ideas(ideas), config)
+    critiques_1 = tension_agent(format_ideas(ideas), config, domain)
     log("TENSION AGENT → Round 1 Output", critiques_1)
 
     # ── STAGE 3: Chief Round 1 — select top 3 ─────────────────────────────────
-    ideas_3, _ = chief_select(ideas, critiques_1, 3, config, round_num=1)
+    ideas_3, _ = chief_select(ideas, critiques_1, 3, config, round_num=1, domain=domain)
 
     # ── STAGE 4: Refiner Round 1 — refine the 3 ───────────────────────────────
-    ideas_3 = refine_ideas(ideas_3, critiques_1, config, round_num=1)
+    ideas_3 = refine_ideas(ideas_3, critiques_1, config, round_num=1, domain=domain)
 
     # ── STAGE 5: Tension Round 2 — deeper critique of 3 ──────────────────────
     log("TENSION AGENT | Round 2", "Deeper critique of 3 refined ideas...")
-    critiques_2 = tension_agent(format_ideas(ideas_3), config)
+    critiques_2 = tension_agent(format_ideas(ideas_3), config, domain)
     log("TENSION AGENT → Round 2 Output", critiques_2)
 
     # ── STAGE 6: Chief Round 2 — select top 1 directly from 3 ────────────────
     log("CHIEF | Round 2", "Selecting 1 from 3 ideas...")
-    final_ideas, _ = chief_select(ideas_3, critiques_2, 1, config, round_num=2)
+    final_ideas, _ = chief_select(ideas_3, critiques_2, 1, config, round_num=2, domain=domain)
     final_idea = final_ideas[0]
 
     # ── STAGE 7: Refiner Round 2 — refine the winner ─────────────────────────
-    final_ideas = refine_ideas([final_idea], critiques_2, config, round_num=2)
+    final_ideas = refine_ideas([final_idea], critiques_2, config, round_num=2, domain=domain)
     final_idea = final_ideas[0]
 
     # ── STAGE 8: Compress to primary decision ─────────────────────────────────
     log("COMPRESSION AGENT", "Compressing to primary decision...")
-    decision = compress_to_decision(final_idea, config)
+    decision = compress_to_decision(final_idea, config, domain)
 
     # ── STAGE 9: Final Output ──────────────────────────────────────────────────
     print(f"\n{'═' * 60}")

@@ -188,8 +188,11 @@ def concept_agent(domain: str, config: LLMConfig) -> str:
     return call_llm(config, CONCEPT_SYSTEM, f"Domain: {domain}")
 
 
-def tension_agent(ideas: str, config: LLMConfig) -> str:
-    return call_llm(config, TENSION_SYSTEM, f"Critique and upgrade these 3 ideas:\n\n{ideas}")
+def tension_agent(ideas: str, config: LLMConfig, domain: str = "") -> str:
+    system = TENSION_SYSTEM
+    if domain:
+        system += f"\n\nCONSTRAINTS REMINDER: The original domain is: {domain}. Any idea, critique, or refinement that contradicts these constraints is invalid and must be flagged: no building software products, no hiring staff, no cloud migrations, no technical infrastructure — only ideas executable by a solo non-technical consultant using existing tools."
+    return call_llm(config, system, f"Critique and upgrade these 3 ideas:\n\n{ideas}")
 
 
 def chief_pick_agent(ideas: str, critiques: str, config: LLMConfig) -> str:
@@ -197,6 +200,9 @@ def chief_pick_agent(ideas: str, critiques: str, config: LLMConfig) -> str:
     return call_llm(config, CHIEF_PICK_SYSTEM, prompt)
 
 
-def refiner_agent(idea: str, critique: str, config: LLMConfig) -> str:
+def refiner_agent(idea: str, critique: str, config: LLMConfig, domain: str = "") -> str:
+    system = REFINER_SYSTEM
+    if domain:
+        system += f"\n\nCONSTRAINTS REMINDER: The original domain is: {domain}. Any idea, critique, or refinement that contradicts these constraints is invalid and must be flagged: no building software products, no hiring staff, no cloud migrations, no technical infrastructure — only ideas executable by a solo non-technical consultant using existing tools."
     prompt = f"IDEA:\n{idea}\n\nCRITIQUE:\n{critique}"
-    return call_llm(config, REFINER_SYSTEM, prompt)
+    return call_llm(config, system, prompt)
