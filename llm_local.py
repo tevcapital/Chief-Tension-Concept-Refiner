@@ -6,6 +6,7 @@ def _strip_thinking(text: str) -> str:
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"<thinking>.*?</thinking>", "", text, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"<reasoning>.*?</reasoning>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"Thinking\.\.\..*?\.\.\.done thinking\.\n?", "", text, flags=re.DOTALL)
     return text.strip()
 
 
